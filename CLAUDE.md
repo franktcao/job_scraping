@@ -70,19 +70,20 @@ job_scraping/
 
 ## Key File: JobEntry.py
 
-Standalone functions for extracting structured data from BeautifulSoup-parsed Indeed HTML:
+`JobEntry` class wrapping a BeautifulSoup element with lazy-parsed, cached properties:
 
-| Function | Purpose |
-|----------|---------|
-| `get_job_title(entry)` | Extract title from `a[data-tn-element='jobTitle']` |
-| `get_company(entry)` | Extract company from `span.company` (fallback: `span.result-link-source`) |
-| `get_location_info(entry)` | Parse location into city, state, zipcode, neighborhood |
-| `get_salary(entry)` | Extract salary from `nobr` or `div.salarySnippet span.salary` |
-| `get_link(entry)` | Get job posting ID from `data-jk` attribute |
-| `get_job_description(job_page)` | Fetch full description from job detail page |
-| `get_job_summary(entry)` | Extract summary from `div.summary` |
+| Property / Method | Purpose |
+|-------------------|---------|
+| `job_title` | Extract title from `a[data-tn-element='jobTitle']` |
+| `company` | Extract company from `span.company` (fallback: `span.result-link-source`) |
+| `city`, `state`, `zipcode`, `neighborhood` | Parsed from location element in `div.sjcl` |
+| `salary` | Extract salary from `nobr` or `div.salarySnippet span.salary` |
+| `link` | Get job posting ID from `data-jk` attribute |
+| `summary` | Extract summary from `div.summary` |
+| `to_dict()` | Return all fields as a dict (ready for DataFrame row) |
+| `fetch_description(url)` | Static method — fetch full description from job detail page |
 
-Exception handling uses specific `AttributeError` catches with fallback logic for resilient scraping.
+Uses `@cached_property` for one-time parsing and specific `AttributeError` catches for resilient scraping.
 
 ## Dependencies
 

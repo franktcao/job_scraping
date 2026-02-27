@@ -1,101 +1,113 @@
-"""Functions for extracting structured data from BeautifulSoup-parsed Indeed HTML."""
+"""Parsed representation of an Indeed job posting entry."""
 
 import time
+from functools import cached_property
 
 import requests
 from bs4 import BeautifulSoup
 
 
-def get_job_title(entry):
-    job_title_container = entry.find(name='a', attrs={'data-tn-element': 'jobTitle'})
-    job_title = job_title_container.text
-    return job_title.strip()
+class JobEntry:
+    """Wraps a BeautifulSoup element for a single Indeed search result row."""
 
+    def __init__(self, entry):
+        self._entry = entry
 
-def get_company(entry):
-    try:
-        element = entry.find(class_='company')
-        return element.text.strip()
-    except AttributeError:
+    @cached_property
+    def job_title(self):
+        container = self._entry.find(name='a', attrs={'data-tn-element': 'jobTitle'})
+        return container.text.strip()
+
+    @cached_property
+    def company(self):
         try:
-            element = entry.find(class_='result-link-source')
-            return element.text.strip()
+            return self._entry.find(class_='company').text.strip()
         except AttributeError:
-            return ' '
+            try:
+                return self._entry.find(class_='result-link-source').text.strip()
+            except AttributeError:
+                return ' '
 
+    @cached_property
+    def _location(self):
+        company_info = self._entry.find(class_='sjcl')
+        location_info = company_info.find(class_='location')
+        location = location_info.text.strip()
 
-def get_location_info(entry):
-    company_info = entry.find(class_='sjcl')
-    location_info = company_info.find(class_='location')
+        # extract neighborhood
+        neighborhood_info = location_info.find(name='span')
+        neighborhood = ' '
+        if neighborhood_info:
+            neighborhood = neighborhood_info.text
+        location = location.rstrip(neighborhood)
+        neighborhood = neighborhood.strip('()')
 
-    location = location_info.text.strip()
+        # extract zipcode
+        zipcode = ' '
+        temp = [s for s in location.split() if s.isdigit()]
+        if temp:
+            zipcode = temp.pop()
+        location = location.strip(zipcode)
 
-    # extract neighborhood info if it's there
-    neighborhood = get_neighborhood(location_info)
-    location = location.rstrip(neighborhood)
-    neighborhood = neighborhood.strip('()')
+        # split city and state
+        city_state = location.split(', ')
+        state = city_state.pop()
+        city = city_state.pop()
 
-    # extract the zipcode from location if it's there
-    zipcode = get_zipcode(location)
-    location = location.strip(zipcode)
+        return city, state, zipcode, neighborhood
 
-    city, state = get_city_and_state(location)
+    @property
+    def city(self):
+        return self._location[0]
 
-    return city, state, zipcode, neighborhood
+    @property
+    def state(self):
+        return self._location[1]
 
+    @property
+    def zipcode(self):
+        return self._location[2]
 
-def get_city_and_state(location):
-    city_state = location.split(', ')
-    state = city_state.pop()
-    city = city_state.pop()
-    return city, state
+    @property
+    def neighborhood(self):
+        return self._location[3]
 
-
-def get_neighborhood(location_info):
-    neighborhood_info = location_info.find(name='span')
-    neighborhood = ' '
-    if neighborhood_info:
-        neighborhood = neighborhood_info.text
-    return neighborhood
-
-
-def get_zipcode(location):
-    zipcode = ' '
-    temp = [s for s in location.split() if s.isdigit()]
-    if temp:
-        zipcode = temp.pop()
-    return zipcode
-
-
-def get_salary(entry):
-    try:
-        return entry.find('nobr').text.strip()
-    except AttributeError:
+    @cached_property
+    def salary(self):
         try:
-            salary_container = entry.find(name='div', class_='salarySnippet')
-            salary_temp = salary_container.find(name='span', class_='salary')
-            return salary_temp.text.strip()
+            return self._entry.find('nobr').text.strip()
         except AttributeError:
-            return ' '
+            try:
+                container = self._entry.find(name='div', class_='salarySnippet')
+                return container.find(name='span', class_='salary').text.strip()
+            except AttributeError:
+                return ' '
 
+    @cached_property
+    def link(self):
+        return self._entry['data-jk']
 
-def get_link(entry):
-    link = entry['data-jk']
-    return link
+    @cached_property
+    def summary(self):
+        return self._entry.find(class_='summary').text.strip()
 
+    def to_dict(self):
+        return {
+            'job_title': self.job_title,
+            'company_name': self.company,
+            'city': self.city,
+            'state': self.state,
+            'zipcode': self.zipcode,
+            'neighborhood': self.neighborhood,
+            'salary': self.salary,
+            'link': self.link,
+        }
 
-def get_job_description(job_page):
-    page = requests.get(job_page)
-    time.sleep(1)  # ensuring at least 1 second between page grabs
-    soup = BeautifulSoup(page.text, 'lxml')
-
-    description = soup.find(name='div', id='jobDescriptionText')
-
-    description = description.text.strip()
-    description = description.replace('\n', ' ')
-    description = description.replace('\t', ' ')
-    return description
-
-
-def get_job_summary(entry):
-    return entry.find(class_='summary').text.strip()
+    @staticmethod
+    def fetch_description(job_url):
+        page = requests.get(job_url)
+        time.sleep(1)  # ensuring at least 1 second between page grabs
+        soup = BeautifulSoup(page.text, 'lxml')
+        description = soup.find(name='div', id='jobDescriptionText')
+        text = description.text.strip()
+        return text.replace('\n', ' ').replace('\t', ' ')
