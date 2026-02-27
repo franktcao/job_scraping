@@ -14,12 +14,18 @@ Indeed.com job scraping and analysis project for data scientist postings. The pr
 
 ```
 job_scraping/
-├── JobEntry.py                              # HTML parsing helpers for job posting elements
+├── JobEntry.py                              # Standalone HTML parsing functions for job posting elements
+├── config.yaml                              # Centralized scraping/cleaning configuration
+├── requirements.txt                         # Python dependencies
 ├── scrape_indeed.ipynb                      # Stage 1: Scrape Indeed → raw CSV
 ├── clean_indeed.ipynb                       # Stage 2: Clean raw CSV → cleaned CSV
 ├── analyze_indeed.ipynb                     # Stage 3: TF-IDF analysis → tfidf CSV
 ├── scrathpad_scrape_indeed.ipynb            # Scraping experiments (scratch)
 ├── scratchpad_bs4_elements.ipynb            # BeautifulSoup selector testing (scratch)
+├── tests/                                   # pytest test suite
+│   ├── __init__.py
+│   ├── conftest.py                          # Shared HTML fixtures for tests
+│   └── test_job_entry.py                    # Tests for JobEntry parsing functions
 ├── 2019-09-02_indeed-ds-postings.csv        # Raw scrape data (Sept 2)
 ├── 2019-09-02_indeed-ds-postings_cleaned.csv
 ├── 2019-09-02indeed_ds_postings.csv         # Alternate naming of Sept 2 raw data
@@ -64,10 +70,10 @@ job_scraping/
 
 ## Key File: JobEntry.py
 
-Helper class with methods for extracting structured data from BeautifulSoup-parsed Indeed HTML:
+Standalone functions for extracting structured data from BeautifulSoup-parsed Indeed HTML:
 
-| Method | Purpose |
-|--------|---------|
+| Function | Purpose |
+|----------|---------|
 | `get_job_title(entry)` | Extract title from `a[data-tn-element='jobTitle']` |
 | `get_company(entry)` | Extract company from `span.company` (fallback: `span.result-link-source`) |
 | `get_location_info(entry)` | Parse location into city, state, zipcode, neighborhood |
@@ -76,14 +82,14 @@ Helper class with methods for extracting structured data from BeautifulSoup-pars
 | `get_job_description(job_page)` | Fetch full description from job detail page |
 | `get_job_summary(entry)` | Extract summary from `div.summary` |
 
-**Note:** Methods are defined as instance methods but lack `self` parameter — they function as standalone functions. The class-level import on line 3 (`from requests`) has a syntax error.
+Exception handling uses specific `AttributeError` catches with fallback logic for resilient scraping.
 
 ## Dependencies
 
-Install manually (no `requirements.txt` exists):
+Install from `requirements.txt`:
 
-```
-pip install pandas requests beautifulsoup4 lxml nltk numpy matplotlib seaborn
+```bash
+pip install -r requirements.txt
 ```
 
 NLTK data required:
@@ -94,16 +100,18 @@ nltk.download('punkt')
 
 ## Configuration
 
-All configuration is hardcoded in notebook cells:
+Scraping and cleaning parameters are defined in `config.yaml`:
 
-| Parameter | Value | Location |
-|-----------|-------|----------|
-| `city_set` | `['Boston']` | `scrape_indeed.ipynb` |
-| `max_pages_per_city` | `60` | `scrape_indeed.ipynb` |
-| `POSTINGS_PER_PAGE` | `17` | `scrape_indeed.ipynb` |
-| Rate limit delay | `1 second` | `scrape_indeed.ipynb`, `JobEntry.py` |
-| Search query | `"data scientist $20,000"` | `scrape_indeed.ipynb` |
-| Salary period multipliers | `{'yearly':1, 'monthly':12, ...}` | `clean_indeed.ipynb` |
+| Parameter | Value | Config Key |
+|-----------|-------|------------|
+| Cities | `['Boston']` | `scraping.cities` |
+| Max pages per city | `60` | `scraping.max_pages_per_city` |
+| Postings per page | `17` | `scraping.postings_per_page` |
+| Rate limit delay | `1 second` | `scraping.request_delay_seconds` |
+| Search query | `"data scientist $20,000"` | `scraping.search_query` |
+| Salary period multipliers | `yearly: 1, monthly: 12, ...` | `cleaning.salary_period_multipliers` |
+
+**Note:** The notebooks still contain hardcoded values and have not yet been updated to read from `config.yaml`. The config file serves as the canonical source of truth for these parameters.
 
 ## Running the Project
 
@@ -125,25 +133,36 @@ jupyter notebook analyze_indeed.ipynb
 
 Each notebook requires manually updating the input CSV filename to match the previous stage's output.
 
+## Testing
+
+Run the test suite with pytest:
+
+```bash
+python -m pytest tests/ -v
+```
+
+Tests cover all `JobEntry.py` parsing functions using HTML fixtures that simulate Indeed's page structure. Fixtures are defined in `tests/conftest.py` with three variants:
+- `sample_entry` — Full entry with salary in `<nobr>` tag
+- `sample_entry_no_salary` — Entry without salary, company via fallback selector
+- `sample_entry_salary_snippet` — Entry with salary in `div.salarySnippet`
+
 ## Code Conventions
 
 - **Functions/variables:** `snake_case` (e.g., `get_job_title`, `city_set`)
 - **Classes:** `PascalCase` (e.g., `JobEntry`)
 - **Constants:** `UPPER_CASE` (e.g., `POSTINGS_PER_PAGE`)
 - **Imports:** Standard library first, then third-party (`import pandas as pd`, `from bs4 import BeautifulSoup`)
-- **Error handling:** Bare `except:` clauses with fallback logic for resilient scraping
+- **Error handling:** Specific exception types (e.g., `AttributeError`) with fallback logic
 - **CSV naming:** `YYYY-MM-DD_indeed-ds-postings[_cleaned|_tfidf].csv`
 - **HTML selectors:** CSS class-based selectors via BeautifulSoup's `find()` API
+- **Tests:** pytest with class-based test grouping and shared fixtures in `conftest.py`
 
 ## Known Limitations
 
 - **Stale selectors:** Indeed's HTML structure has changed since 2019; CSS selectors in `JobEntry.py` and notebooks are likely broken against current Indeed pages
-- **No dependency management:** No `requirements.txt`, `setup.py`, or `pyproject.toml`
-- **No tests:** No test framework; testing is ad-hoc in scratchpad notebooks
-- **Hardcoded config:** City list, page limits, and delays are inline in notebook cells
-- **JobEntry.py issues:** Methods lack `self` parameter (should be `@staticmethod` or standalone functions); line 3 has a syntax error (`from requests` with no import target)
-- **Bare except clauses:** Broad exception handling can mask real errors
+- **Notebooks not wired to config.yaml:** The notebooks still use inline hardcoded values; `config.yaml` exists as a reference but is not yet loaded by the notebooks
 - **Low salary coverage:** Only ~6.5% of scraped postings include salary data
 - **No CLI interface:** Pipeline can only be run through Jupyter UI
 - **Sequential HTTP requests:** No async/parallel fetching; scraping ~1000 pages is slow
 - **Manual filename wiring:** Each notebook stage requires manually updating the input CSV filename
+- **Bare except clauses in notebooks:** `scrape_indeed.ipynb` and `clean_indeed.ipynb` still use broad `except:` clauses (fixed in `JobEntry.py`)

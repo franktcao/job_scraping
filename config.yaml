@@ -1,0 +1,24 @@
+# Indeed job scraping configuration
+
+scraping:
+  search_query: "data scientist $20,000"
+  cities:
+    - "Boston"
+  max_pages_per_city: 60
+  postings_per_page: 17
+  request_delay_seconds: 1
+  base_url: "https://www.indeed.com/jobs?q=data+scientist+%2420%2C000"
+
+cleaning:
+  salary_period_multipliers:
+    yearly: 1
+    monthly: 12
+    weekly: 52
+    daily: 261
+    hourly: 2088
+
+output:
+  date_format: "%Y-%m-%d"
+  raw_suffix: "_indeed-ds-postings.csv"
+  cleaned_suffix: "_indeed-ds-postings_cleaned.csv"
+  tfidf_suffix: "_indeed-ds-postings_tfidf.csv"
