@@ -1,103 +1,113 @@
+"""Parsed representation of an Indeed job posting entry."""
+
+import time
+from functools import cached_property
+
+import requests
+from bs4 import BeautifulSoup
+
+
 class JobEntry:
-    from bs4 import BeautifulSoup
-    from requests
+    """Wraps a BeautifulSoup element for a single Indeed search result row."""
 
     def __init__(self, entry):
-        self.entry = entry
+        self._entry = entry
 
+    @cached_property
+    def job_title(self):
+        container = self._entry.find(name='a', attrs={'data-tn-element': 'jobTitle'})
+        return container.text.strip()
 
-    def get_job_title(entry):
-        job_title_container = entry.find(name='a', attrs={'data-tn-element':'jobTitle'})
-        job_title = job_title_container.text
-        return job_title.strip()
-
-    def get_company(entry):
-        company_list = []
+    @cached_property
+    def company(self):
         try:
-            test_entry = entry.find(class_='company')
-            company_list.append(test_entry.text.strip())
-            company = company_list.pop()
-        except:
+            return self._entry.find(class_='company').text.strip()
+        except AttributeError:
             try:
-                test_entry = entry.find(class_='result-link-source')
-                company_list.append(test_entry.text.strip())
-                company = company_list.pop()
-            except:
-                company = ' '
-        return company
+                return self._entry.find(class_='result-link-source').text.strip()
+            except AttributeError:
+                return ' '
 
-    def get_location_info(entry):
-        company_info = entry.find(class_='sjcl')
+    @cached_property
+    def _location(self):
+        company_info = self._entry.find(class_='sjcl')
         location_info = company_info.find(class_='location')
-
         location = location_info.text.strip()
 
-        # extract neightborhood info if it's there
-        neighborhood = get_neighborhood(location_info)
-        location = location.rstrip(neighborhood)
-        neighborhood = neighborhood.strip('()')
-
-        # extract the zipcode from location if it's there
-        zipcode = get_zipcode(location)
-        location = location.strip(zipcode)
-
-        city, state = get_city_and_state(location)
-
-        return city, state, zipcode, neighborhood
-
-    def get_city_and_state(location):
-        city_state = location.split(', ')
-        state = city_state.pop()
-        city = city_state.pop()
-        return city, state
-
-    def get_neighborhood(location_info):
+        # extract neighborhood
         neighborhood_info = location_info.find(name='span')
         neighborhood = ' '
         if neighborhood_info:
             neighborhood = neighborhood_info.text
-        return neighborhood
+        location = location.rstrip(neighborhood)
+        neighborhood = neighborhood.strip('()')
 
-    def get_zipcode(location):
+        # extract zipcode
         zipcode = ' '
-        temp = [ s for s in location.split() if s.isdigit() ]
+        temp = [s for s in location.split() if s.isdigit()]
         if temp:
             zipcode = temp.pop()
-        return zipcode
+        location = location.strip(zipcode)
 
-    def get_salary(entry):
-        salary_list = []
-        salary = ''
+        # split city and state
+        city_state = location.split(', ')
+        state = city_state.pop()
+        city = city_state.pop()
+
+        return city, state, zipcode, neighborhood
+
+    @property
+    def city(self):
+        return self._location[0]
+
+    @property
+    def state(self):
+        return self._location[1]
+
+    @property
+    def zipcode(self):
+        return self._location[2]
+
+    @property
+    def neighborhood(self):
+        return self._location[3]
+
+    @cached_property
+    def salary(self):
         try:
-            salary_list.append(entry.find('nobr').text.strip())
-            salary = salary_list.pop()
-        except:
+            return self._entry.find('nobr').text.strip()
+        except AttributeError:
             try:
-                salary_container = entry.find(name='div', class_='salarySnippet')
-                salary_temp = salary_container.find(name='span', class_='salary')
-                salary_list.append(salary_temp.text.strip())
-                salary = salary_list.pop()
-            except:
-                salary = ' '
-        return salary
+                container = self._entry.find(name='div', class_='salarySnippet')
+                return container.find(name='span', class_='salary').text.strip()
+            except AttributeError:
+                return ' '
 
-    def get_link(entry):
-        link = entry['data-jk']
-        return link
+    @cached_property
+    def link(self):
+        return self._entry['data-jk']
 
-    def get_job_description(job_page):
-        page = requests.get(job_page)
-        time.sleep(1)  #ensuring at least 1 second between page grabs
+    @cached_property
+    def summary(self):
+        return self._entry.find(class_='summary').text.strip()
+
+    def to_dict(self):
+        return {
+            'job_title': self.job_title,
+            'company_name': self.company,
+            'city': self.city,
+            'state': self.state,
+            'zipcode': self.zipcode,
+            'neighborhood': self.neighborhood,
+            'salary': self.salary,
+            'link': self.link,
+        }
+
+    @staticmethod
+    def fetch_description(job_url):
+        page = requests.get(job_url)
+        time.sleep(1)  # ensuring at least 1 second between page grabs
         soup = BeautifulSoup(page.text, 'lxml')
-
-        # Loop over posts/entries
         description = soup.find(name='div', id='jobDescriptionText')
-
-        description = description.text.strip()
-        description = description.replace('\n',' ')
-        description = description.replace('\t',' ')
-        return description
-    
-    def get_job_summary(entry):
-        return entry.find(class_='summary').text.strip()
-
+        text = description.text.strip()
+        return text.replace('\n', ' ').replace('\t', ' ')
